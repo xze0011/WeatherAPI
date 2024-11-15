@@ -13,28 +13,23 @@ namespace api.Services
 
         public RateLimitService(TokenBucket tokenBucket)
         {
-            Console.WriteLine($"[RateLimitService] Constructor called with TokenBucket: {tokenBucket}");
+            Console.WriteLine($"[RateLimitService] Initialized with provided TokenBucket.");
             _tokenBucket = tokenBucket;
         }
 
         public bool TryConsumeToken()
         {
-            Console.WriteLine("[RateLimitService] TryConsumeToken() method called.");
             lock (_lock)
             {
-                Console.WriteLine("[RateLimitService] Entering lock region.");
                 foreach (var token in _tokenBucket.Tokens)
                 {
-                    Console.WriteLine($"[RateLimitService] Checking token - Key: {token.Key}, RemainingUses: {token.RemainingUses}");
-
                     token.Refill(_refillInterval);
-                    Console.WriteLine($"[RateLimitService] After Refill() call, token status - Key: {token.Key}, RemainingUses: {token.RemainingUses}");
 
                     if (token.RemainingUses > 0)
                     {
                         // Consume one token
                         token.RemainingUses--;
-                        Console.WriteLine($"[RateLimitService] Successfully consumed one token - Key: {token.Key}, RemainingUses: {token.RemainingUses}");
+                        Console.WriteLine($"[RateLimitService] Token consumed - Key: {token.Key}, RemainingUses: {token.RemainingUses}");
                         return true;
                     }
                 }
