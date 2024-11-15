@@ -25,7 +25,7 @@ jobs:
         run: dotnet build --configuration Release
 
       - name: Run xUnit tests
-        run: dotnet test ./WeatherApi.Tests/api.Tests.csproj --configuration Release --no-build --verbosity normal
+        run: dotnet test ./WeatherApi.Tests/WeatherApi.Tests.csproj --configuration Release --no-build --verbosity normal
         
       - name: dotnet publish
         run: dotnet publish -c Release -o ${{env.DOTNET_ROOT}}/myapp
