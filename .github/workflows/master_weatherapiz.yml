@@ -24,6 +24,9 @@ jobs:
       - name: Build with dotnet
         run: dotnet build --configuration Release
 
+      - name: Run xUnit tests
+        run: dotnet test ./api.Tests/api.Tests.csproj --configuration Release --no-build --verbosity normal
+        
       - name: dotnet publish
         run: dotnet publish -c Release -o ${{env.DOTNET_ROOT}}/myapp
 
