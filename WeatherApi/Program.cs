@@ -1,35 +1,29 @@
 using api.Interfaces;
 using api.Models;
 using api.Services;
+using Microsoft.Extensions.Options;
+using WeatherApi.Interfaces;
+using WeatherApi.Models;
+using WeatherApi.Services;
+
 var builder = WebApplication.CreateBuilder(args);
 
-var openWeatherMapApiKeys = new List<string>
+// Configure options from appsettings sections
+builder.Services.Configure<OpenWeatherMapConfig>(builder.Configuration.GetSection("OpenWeatherMap"));
+builder.Services.Configure<RateLimitConfig>(builder.Configuration.GetSection("RateLimitConfig"));
+
+// Register services
+builder.Services.AddSingleton(provider =>
 {
-    builder.Configuration["OpenWeatherMapApiKey1"],
-    builder.Configuration["OpenWeatherMapApiKey2"]
-};
-builder.Services.AddSingleton(new OpenWeatherMapApiKeys(openWeatherMapApiKeys));
+    var config = provider.GetRequiredService<IOptions<RateLimitConfig>>().Value;
+    return new TokenBucket(config.ClientKeys, config.TokenCapacity);
+});
+builder.Services.AddSingleton<IRateLimitService, RateLimitService>();
 
-// Add Client API KEY 
-var clientKeys = new List<string>();
-for (int i = 1; i <= 5; i++)
-{
-    string clientKey = builder.Configuration[$"ClientKey{i}"];
-    if (!string.IsNullOrEmpty(clientKey))
-    {
-        clientKeys.Add(clientKey);
-    }
-}
-var tokenBucket = new TokenBucket(clientKeys, 2);
+builder.Services.AddTransient<IWeatherService, WeatherService>();
+builder.Services.AddTransient<ILocationValidationService, LocationValidationService>();
 
-// 注册 TokenBucket 为单例
-builder.Services.AddSingleton(tokenBucket);
-
-// 注册 RateLimitService，传入 TokenBucket 和容量
-builder.Services.AddSingleton<IRateLimitService>(new RateLimitService(tokenBucket));
-
-// Add services to the container.
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+// Configure HttpClient and other MVC-related services
 builder.Services.AddHttpClient();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -37,7 +31,6 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -46,6 +39,4 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.MapControllers();
-
-
 app.Run();

@@ -1,50 +1,80 @@
-﻿using api.Models;
+﻿using System;
+using System.Collections.Generic;
+using api.Interfaces;
+using api.Models;
 using api.Services;
+using FakeItEasy;
+using FluentAssertions;
+using Microsoft.Extensions.Logging;
+using Xunit;
 
 namespace api.Tests.Services
 {
     public class RateLimitServiceTests
     {
-        private readonly RateLimitService _rateLimitService;
         private readonly TokenBucket _tokenBucket;
+        private readonly ILogger<RateLimitService> _fakeLogger;
+        private readonly RateLimitService _rateLimitService;
 
         public RateLimitServiceTests()
         {
-            var keys = new List<string> { "TestKey1", "TestKey2" };
-            int capacity = 1;
-
-            _tokenBucket = new TokenBucket(keys, capacity);
-
-            // 创建 RateLimitService 实例
-            _rateLimitService = new RateLimitService(_tokenBucket);
+            _fakeLogger = A.Fake<ILogger<RateLimitService>>();
+            _tokenBucket = new TokenBucket(new List<string> { "TestKey1", "TestKey2", "TestKey3", "TestKey4", "TestKey5" }, 5);
+            _rateLimitService = new RateLimitService(_tokenBucket, _fakeLogger);
         }
 
         [Fact]
-        public void TryConsumeToken_ShouldReturnTrue_WhenTokenIsAvailable()
+        public void TryConsumeToken_ShouldReturnTrue_WhenTokensAreAvailable()
         {
-            // No Arrage 
+            // Act
+            var results = new List<bool>();
+            for (int i = 0; i < 5; i++)
+            {
+                results.Add(_rateLimitService.TryConsumeToken());
+            }
+
+            // Assert
+            results.Should().AllBeEquivalentTo(true); // All attempts should succeed
+            _tokenBucket.Tokens[0].RemainingUses.Should().Be(0); // Verify that the first token's remaining uses are reduced to 0
+        }
+
+        [Fact]
+        public void TryConsumeToken_ShouldReturnFalse_WhenNoTokensAreAvailable()
+        {
+            // Consume all tokens
+            for (int i = 0; i < 26; i++)
+            {
+                _rateLimitService.TryConsumeToken();
+            }
 
             // Act
             var result = _rateLimitService.TryConsumeToken();
 
             // Assert
-            Assert.True(result);
-            Assert.Equal(0, _tokenBucket.Tokens[0].RemainingUses); // 确保令牌被消耗
+            result.Should().BeFalse();
         }
 
         [Fact]
-        public void TryConsumeToken_ShouldReturnFalse_WhenAllTokensAreExhausted()
+        public void TryConsumeToken_ShouldRefillTokens_AfterRefillInterval()
         {
-            // Arrange
-            _tokenBucket.Tokens[0].RemainingUses = 0; // 将所有令牌的使用次数设为0
-            _tokenBucket.Tokens[1].RemainingUses = 0;
+            // Consume all tokens
+            for (int i = 0; i < 5; i++)
+            {
+                _rateLimitService.TryConsumeToken();
+            }
+
+            // Simulate passing the refill interval by setting the LastRefill time to 1 hour ago
+            foreach (var token in _tokenBucket.Tokens)
+            {
+                token.LastRefillTime = DateTime.UtcNow - TimeSpan.FromHours(1);
+            }
 
             // Act
             var result = _rateLimitService.TryConsumeToken();
 
             // Assert
-            Assert.False(result);
+            result.Should().BeTrue();
+            _tokenBucket.Tokens[0].RemainingUses.Should().Be(4); // Verify that the first token was refilled with 5 uses, 1 used
         }
-
     }
 }

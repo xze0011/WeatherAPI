@@ -1,58 +1,59 @@
 ﻿using api.Interfaces;
-using api.Models;
 using Microsoft.AspNetCore.Mvc;
-using Newtonsoft.Json.Linq;
+using Microsoft.Extensions.Logging;
+using WeatherApi.Interfaces;
 
 [ApiController]
 [Route("api/[controller]")]
 public class WeatherController : ControllerBase
 {
-    private readonly HttpClient _httpClient;
-    private readonly List<string> _openWeatherMapApiKey;
+    private readonly IWeatherService _weatherService;
     private readonly IRateLimitService _rateLimitService;
+    private readonly ILocationValidationService _locationValidationService;
+    private readonly ILogger<WeatherController> _logger;
 
-    public WeatherController(HttpClient httpClient, IRateLimitService rateLimitService, OpenWeatherMapApiKeys openWeatherMapApiKey)
+    public WeatherController(
+        IWeatherService weatherService,
+        IRateLimitService rateLimitService,
+        ILocationValidationService locationValidationService,
+        ILogger<WeatherController> logger)
     {
-        _httpClient = httpClient;
+        _weatherService = weatherService;
         _rateLimitService = rateLimitService;
-        _openWeatherMapApiKey = openWeatherMapApiKey.ApiKeys;
+        _locationValidationService = locationValidationService;
+        _logger = logger;
     }
 
-    [HttpGet("getWeather")]
+    [HttpGet]
     public async Task<IActionResult> GetWeather([FromQuery] string city, [FromQuery] string country)
     {
-        if (string.IsNullOrEmpty(city) || string.IsNullOrEmpty(country))
+        _logger.LogInformation("Received request to get weather for {City}, {Country}", city, country);
+
+        // Validate location input
+        if (!_locationValidationService.ValidateLocation(city, country, out var errorMessage))
         {
-            return BadRequest("City and country must be provided.");
+            _logger.LogWarning("Location validation failed for {City}, {Country}: {ErrorMessage}", city, country, errorMessage);
+            return BadRequest(new { error = errorMessage });
         }
 
+        // Check rate limit
         if (!_rateLimitService.TryConsumeToken())
         {
-            return StatusCode(429, "Rate limit exceeded. Please try again later.");
+            _logger.LogWarning("Rate limit exceeded for weather request");
+            return StatusCode(429, new { error = "Rate limit exceeded. Please try again later." });
         }
 
-        var random = new Random();
-        var selectedApiKey = _openWeatherMapApiKey[random.Next(_openWeatherMapApiKey.Count)];
-        var requestUrl = $"https://api.openweathermap.org/data/2.5/weather?q={city},{country}&appid={selectedApiKey}";
+        // Fetch weather data
+        var weatherResponse = await _weatherService.GetWeatherDescriptionAsync(city, country);
 
-        try
+        // Handle potential errors from weather service
+        if (!string.IsNullOrEmpty(weatherResponse.ErrorMessage))
         {
-
-            var response = await _httpClient.GetAsync(requestUrl);
-            response.EnsureSuccessStatusCode();
-
-            var responseBody = await response.Content.ReadAsStringAsync();
-            var json = JObject.Parse(responseBody);
-
-            var description = json["weather"]?[0]?["description"]?.ToString();
-
-            return Ok(new { description });
-
+            _logger.LogError("Error retrieving weather data: {ErrorMessage}", weatherResponse.ErrorMessage);
+            return StatusCode(500, new { error = weatherResponse.ErrorMessage });
         }
-        catch (HttpRequestException ex)
-        {
 
-            return StatusCode(500, $"Error retrieving data from OpenWeatherMap API: {ex.Message}");
-        }
+        _logger.LogInformation("Successfully retrieved weather for {City}, {Country}: {Description}", city, country, weatherResponse.Description);
+        return Ok(new { description = weatherResponse.Description });
     }
 }
